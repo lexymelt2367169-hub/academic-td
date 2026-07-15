@@ -122,6 +122,8 @@ export interface BattleState {
   unlockedCells2: Set<string>
   goldPity: number
   goldPity2: number
+  defeated: number
+  defeated2: number
 }
 
 function cellKey(gx: number, gy: number) {
@@ -178,6 +180,8 @@ export function createBattle(mode: BattleMode, seed = Date.now()): BattleState {
     unlockedCells2: unlocked2,
     goldPity: 0,
     goldPity2: 0,
+    defeated: 0,
+    defeated2: 0,
   }
 
   // opening hand without coffee cost
@@ -654,6 +658,9 @@ export function updateBattle(s: BattleState, dt: number, layout: Layout) {
       s.message = wdef.boss
         ? `第${wdef.wave}波 Boss：${wdef.bossSkill}`
         : `第${wdef.wave}波来袭`
+      const researchGrant = wdef.boss ? 12 : 8
+      s.coffee += researchGrant
+      if (s.mode === 'hotseat') s.coffee2 += researchGrant
       if (wdef.boss && wdef.wave === 6) {
         s.silenceT = 3
         if (s.mode === 'hotseat') s.silenceT2 = 3
@@ -837,7 +844,27 @@ function hitEnemy(
   kind: UnitKind | null,
   word?: string,
 ) {
+  if (en.hp <= 0) return
   en.hp -= dmg
+  if (en.hp <= 0) {
+    const reward = en.boss ? 8 : 2
+    if (en.side === 0) {
+      s.coffee += reward
+      s.defeated += 1
+    } else {
+      s.coffee2 += reward
+      s.defeated2 += 1
+    }
+    if (s.floats.length < 40) {
+      s.floats.push({
+        x: en.x,
+        y: en.y - 8,
+        text: `+${reward}☕`,
+        life: 0.7,
+        color: '#c27c0e',
+      })
+    }
+  }
   const text =
     word ||
     (kind ? HIT_WORDS[kind][Math.floor(s.rand() * HIT_WORDS[kind].length)] : '击')

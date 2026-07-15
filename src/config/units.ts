@@ -54,6 +54,7 @@ export const REFRESH_FREE = 1
 export const REFRESH_PAID_MAX = 2
 export const REFRESH_COST = 8
 export const SEARCH_PER_BATTLE = 1
-export const START_COFFEE = 45
+/** Enough for the opening hand plus a few deliberate choices. */
+export const START_COFFEE = 50
 export const MANUSCRIPT_HP = 3
 export const MAX_UNIT_LEVEL = 5

@@ -12,8 +12,7 @@ import {
   type BattleState,
   type Layout,
 } from './game/battle'
-import { UNIT_KINDS, type UnitKind } from './config/units'
-import { RECRUIT_COST } from './config/units'
+import { RECRUIT_COST, UNIT_KINDS, type UnitKind } from './config/units'
 import {
   applyRankedResult,
   currentTier,
@@ -31,34 +30,59 @@ let layout: Layout | null = null
 let mode: BattleMode = 'ranked'
 let settleText = ''
 let activeSide: 0 | 1 = 0
-let drag:
-  | { type: 'recruit'; side: 0 | 1; index: number }
-  | { type: 'board'; side: 0 | 1; id: number }
-  | null = null
+let drag: { type: 'board'; side: 0 | 1; id: number } | null = null
 let pointer = { x: 0, y: 0 }
 let searchOpen = false
+let selectedRecruit: { side: 0 | 1; index: number } | null = null
+let battleStarted = false
+let battlePaused = false
+let battleSpeed = 1
+
+const UNIT_TIPS: Record<UnitKind, string> = {
+  刀: '近战单点，高频批改',
+  枪: '穿透质询，可同时打击多个目标',
+  弓: '超远射程，优先压制后排审稿人',
+  骑: '范围冲击，适合清理密集敌群',
+}
+
+const UNIT_COLORS: Record<UnitKind, string> = {
+  刀: '#b95042',
+  枪: '#7559a6',
+  弓: '#277d8d',
+  骑: '#c27c0e',
+}
 
 function renderHall() {
   const save = loadSave()
   const tier = currentTier(save)
+  const stars =
+    tier.id === 'acad'
+      ? '荣誉段位'
+      : `${'★'.repeat(save.stars)}${'☆'.repeat(Math.max(0, Math.min(tier.starsPerTier, 5) - save.stars))}`
   app.innerHTML = `
     <div class="shell hall">
-      <header class="hero">
-        <p class="eyebrow">网页原型</p>
-        <h1>学术塔防</h1>
-        <p class="sub">组会招募 · 文字合成 · 守护答辩稿</p>
+      <header class="hero hero-panel">
+        <div class="hero-topline"><span>ACADEMIC TD</span><span class="version-tag">原型 0.2</span></div>
+        <p class="eyebrow">一篇论文，十轮答辩</p>
+        <h1><span>学术</span>塔防</h1>
+        <p class="sub">招募研究组成员，合成学术武将，守住你的答辩稿。</p>
+        <div class="mission-strip"><span>本局目标</span><strong>顶住 10 波审稿人</strong><i>稿件生命 ×3</i></div>
       </header>
-      <section class="card status">
-        <div><span>段位</span><strong>${tier.name}</strong></div>
-        <div><span>星级</span><strong>${'★'.repeat(save.stars)}${'☆'.repeat(Math.max(0, tier.starsPerTier - save.stars))}</strong></div>
-        <div><span>战绩</span><strong>${save.wins}胜 ${save.losses}负</strong></div>
-        <div><span>友谊赛胜</span><strong>${save.friendWins}</strong></div>
+      <section class="status-card">
+        <div><span>当前段位</span><strong>${tier.name}</strong></div>
+        <div><span>星级</span><strong class="stars">${stars}</strong></div>
+        <div><span>排位战绩</span><strong>${save.wins} 胜 · ${save.losses} 负</strong></div>
+        <div><span>热座胜场</span><strong>${save.friendWins}</strong></div>
+      </section>
+      <section class="newbie-card">
+        <p class="section-kicker">新手三步</p>
+        <div class="steps"><div><b>01</b><span>点选卡牌<br/>布置研究员</span></div><div><b>02</b><span>同种单位<br/>合成升星</span></div><div><b>03</b><span>拼出校名<br/>激活武将</span></div></div>
       </section>
       <div class="actions">
-        <button class="btn primary" id="btn-ranked">排位答辩（异步影子）</button>
-        <button class="btn" id="btn-hotseat">好友热座（不计星）</button>
+        <button class="btn primary play-btn" id="btn-ranked"><span>开始排位答辩</span><small>单人 · 计入段位</small></button>
+        <button class="btn secondary" id="btn-hotseat"><span>好友热座</span><small>双人同屏 · 不计星</small></button>
       </div>
-      <p class="hint">拖拽招募单位到棋盘；拖到同级同种上可合成。金色单字相邻按序拼成武将。</p>
+      <p class="hint">刀、枪、弓、骑各有定位；金色校名碎片按顺序相邻即可召唤武将。每波都有研究经费，击败审稿人还会掉落咖啡。</p>
     </div>
   `
   document.getElementById('btn-ranked')!.onclick = () => startBattle('ranked')
@@ -71,6 +95,12 @@ function startBattle(m: BattleMode) {
   screen = 'battle'
   searchOpen = false
   activeSide = 0
+  selectedRecruit = null
+  drag = null
+  battleStarted = false
+  battlePaused = false
+  battleSpeed = 1
+  last = performance.now()
   renderBattleShell()
   requestAnimationFrame(loop)
 }
@@ -93,8 +123,8 @@ function renderBattleShell() {
 
 function resize(canvas: HTMLCanvasElement) {
   const dpr = Math.min(window.devicePixelRatio || 1, 2)
-  const w = Math.min(window.innerWidth, 480)
-  const h = Math.min(window.innerHeight, 860)
+  const w = Math.min(window.innerWidth, 720)
+  const h = Math.min(window.innerHeight, 900)
   canvas.style.width = `${w}px`
   canvas.style.height = `${h}px`
   canvas.width = Math.floor(w * dpr)
@@ -108,14 +138,38 @@ function paintHud() {
   if (!battle) return
   const s = battle
   const hud = document.getElementById('hud')!
+  const state = !battleStarted ? '准备布阵' : battlePaused ? '暂停中' : `进行中 ×${battleSpeed}`
+  const runLabel = !battleStarted ? '开始答辩' : battlePaused ? '继续' : '暂停'
   hud.innerHTML = `
     <div class="hud-row">
-      <span>☕ ${s.coffee}${mode === 'hotseat' ? ` | P2 ${s.coffee2}` : ''}</span>
-      <span>稿❤ ${s.hp}${mode === 'hotseat' ? ` | P2 ${s.hp2}` : ''}</span>
-      <span>波次 ${s.wave}/10</span>
+      <div class="hud-stats"><span>☕ ${s.coffee}${mode === 'hotseat' ? ` / P2 ${s.coffee2}` : ''}</span><span>稿件 ♥ ${s.hp}${mode === 'hotseat' ? ` / P2 ${s.hp2}` : ''}</span><span>击退 ${s.defeated}${mode === 'hotseat' ? ` / ${s.defeated2}` : ''}</span></div>
+      <div class="hud-actions"><button class="control" id="btn-speed" title="切换 1 倍或 2 倍速度">×${battleSpeed}</button><button class="control primary-control" id="btn-run">${runLabel}</button><button class="control" id="btn-exit" title="返回大厅">⌂</button></div>
     </div>
+    <div class="wave-line"><span>第 ${s.wave || 1} / 10 波</span><div><i style="width:${Math.max(4, (Math.min(s.wave, 10) / 10) * 100)}%"></i></div><em>${state}</em></div>
     <div class="hud-msg">${s.message}</div>
   `
+  document.getElementById('btn-run')!.onclick = () => {
+    if (!battle) return
+    if (!battleStarted) {
+      battleStarted = true
+      battlePaused = false
+      battle.message = '答辩开始：击败审稿人，守住论文！'
+    } else {
+      battlePaused = !battlePaused
+      battle.message = battlePaused ? '答辩暂缓：可调整阵型' : '答辩继续'
+    }
+    paintHud()
+  }
+  document.getElementById('btn-speed')!.onclick = () => {
+    battleSpeed = battleSpeed === 1 ? 2 : 1
+    paintHud()
+  }
+  document.getElementById('btn-exit')!.onclick = () => {
+    screen = 'hall'
+    battle = null
+    layout = null
+    renderHall()
+  }
 }
 
 function paintDock() {
@@ -127,6 +181,7 @@ function paintDock() {
   const freeR = side === 0 ? s.freeRefresh : s.freeRefresh2
   const paidR = side === 0 ? s.paidRefresh : s.paidRefresh2
   const searchL = side === 0 ? s.searchLeft : s.searchLeft2
+  const selected = selectedRecruit?.side === side ? selectedRecruit.index : -1
 
   dock.innerHTML = `
     <div class="dock-top">
@@ -144,12 +199,22 @@ function paintDock() {
           else if (sl.type === 'frag') label = sl.char!
           else if (sl.type === 'shovel') label = '工位'
           else label = '·'
-          const cls =
-            sl.type === 'frag' ? 'slot gold' : sl.type === 'shovel' ? 'slot shovel' : 'slot'
-          return `<button class="${cls}" data-slot="${i}">${label}</button>`
+          const tone =
+            sl.type === 'frag' ? 'gold' : sl.type === 'shovel' ? 'shovel' : sl.type === 'empty' ? 'empty' : `unit-${sl.unitKind}`
+          const cls = `slot ${tone} ${selected === i ? 'selected' : ''}`
+          const hint =
+            sl.type === 'unit'
+              ? UNIT_TIPS[sl.unitKind!]
+              : sl.type === 'frag'
+                ? '校名碎片：按顺序相邻拼出武将'
+                : sl.type === 'shovel'
+                  ? '扩建一个相邻的空工位'
+                  : '空卡槽'
+          return `<button class="${cls}" data-slot="${i}" title="${hint}" ${sl.type === 'empty' ? 'disabled' : ''}><b>${label}</b><small>${sl.type === 'unit' ? '研究员' : sl.type === 'frag' ? '校名' : sl.type === 'shovel' ? '扩建' : ''}</small></button>`
         })
         .join('')}
     </div>
+    <p class="dock-instruction">${selectedRecruit ? '已选中卡牌：点击棋盘中的浅色工位落位。' : '点选卡牌后点击落位；拖动棋盘单位可合成或换位。'}</p>
     <div class="skills" id="skills"></div>
     ${
       searchOpen
@@ -163,7 +228,23 @@ function paintDock() {
   dock.querySelectorAll('[data-side]').forEach((el) => {
     ;(el as HTMLButtonElement).onclick = () => {
       activeSide = Number((el as HTMLElement).dataset.side) as 0 | 1
+      selectedRecruit = null
       paintDock()
+    }
+  })
+  dock.querySelectorAll('[data-slot]').forEach((el) => {
+    ;(el as HTMLButtonElement).onpointerdown = (event) => {
+      event.preventDefault()
+      event.stopPropagation()
+      const index = Number((el as HTMLElement).dataset.slot)
+      const slot = slots[index]
+      if (!slot || slot.type === 'empty') return
+      selectedRecruit = { side, index }
+      drag = null
+      const label = slot.type === 'unit' ? slot.unitKind : slot.type === 'frag' ? slot.char : '工位'
+      s.message = `已选择 ${label}：点击棋盘落位`
+      paintDock()
+      paintHud()
     }
   })
   document.getElementById('btn-recruit')!.onclick = () => {
@@ -200,7 +281,7 @@ function paintDock() {
     .map((g) => {
       if (g.kind !== 'general') return ''
       const ready = g.skillCd <= 0
-      return `<button class="skill ${ready ? '' : 'off'}" data-gid="${g.id}">${g.def.name}${ready ? '' : `(${Math.ceil(g.skillCd)}s)`}</button>`
+      return `<button class="skill ${ready ? '' : 'off'}" title="${g.def.desc}" data-gid="${g.id}">${g.def.name}${ready ? '' : `(${Math.ceil(g.skillCd)}s)`}</button>`
     })
     .join('')
   skills.querySelectorAll('[data-gid]').forEach((el) => {
@@ -223,25 +304,18 @@ function bindInput(canvas: HTMLCanvasElement) {
     const p = toLocal(e)
     pointer = p
     canvas.setPointerCapture(e.pointerId)
-
-    // recruit slot hit via dock buttons only for click; drag from slots:
-    // also allow starting drag from dock slots approximated — handled by slot buttons with pointer
-  }
-
-  // Slot drag: attach after paint
-  app.onpointerdown = (e) => {
-    const t = e.target as HTMLElement
-    if (t.dataset.slot != null && battle) {
-      drag = { type: 'recruit', side: activeSide, index: Number(t.dataset.slot) }
-      const rect = (document.getElementById('game') as HTMLCanvasElement).getBoundingClientRect()
-      pointer = { x: e.clientX - rect.left, y: e.clientY - rect.top }
+    if (selectedRecruit) {
+      const cell = hitCell(p.x, p.y, selectedRecruit.side)
+      if (!cell) {
+        battle.message = '请在当前玩家的棋盘内选择一个工位'
+      } else {
+        placeFromRecruit(battle, selectedRecruit.side, selectedRecruit.index, cell.gx, cell.gy)
+        selectedRecruit = null
+      }
+      paintDock()
+      paintHud()
+      return
     }
-  }
-
-  canvas.onpointerdown = (e) => {
-    if (!battle || !layout) return
-    const p = toLocal(e)
-    pointer = p
     const hit = hitBoardEntity(p.x, p.y)
     if (hit) {
       drag = { type: 'board', side: hit.side, id: hit.id }
@@ -259,13 +333,8 @@ function bindInput(canvas: HTMLCanvasElement) {
     const p = toLocal(e)
     const cell = hitCell(p.x, p.y, drag.side)
     if (cell) {
-      if (drag.type === 'recruit') {
-        placeFromRecruit(battle, drag.side, drag.index, cell.gx, cell.gy)
-        paintDock()
-      } else {
-        mergeDrag(battle, drag.side, drag.id, cell.gx, cell.gy)
-        paintDock()
-      }
+      mergeDrag(battle, drag.side, drag.id, cell.gx, cell.gy)
+      paintDock()
       paintHud()
     }
     drag = null
@@ -306,11 +375,13 @@ let hudAcc = 0
 
 function loop(now: number) {
   if (screen !== 'battle' || !battle || !layout) return
-  const dt = Math.min(0.05, (now - last) / 1000)
+  const rawDt = Math.min(0.05, (now - last) / 1000)
   last = now
-  updateBattle(battle, dt, layout)
+  if (battleStarted && !battlePaused) {
+    updateBattle(battle, rawDt * battleSpeed, layout)
+    hudAcc += rawDt
+  }
   draw()
-  hudAcc += dt
   if (hudAcc > 0.25) {
     hudAcc = 0
     paintHud()
@@ -333,12 +404,23 @@ function draw() {
   const h = layout.h
   ctx.clearRect(0, 0, w, h)
 
-  // background
+  // paper-and-ink background
   const g = ctx.createLinearGradient(0, 0, 0, h)
-  g.addColorStop(0, '#f3efe6')
-  g.addColorStop(1, '#e4ddd0')
+  g.addColorStop(0, '#f7f3e9')
+  g.addColorStop(0.52, '#e8dfcc')
+  g.addColorStop(1, '#d5c4ad')
   ctx.fillStyle = g
   ctx.fillRect(0, 0, w, h)
+  ctx.globalAlpha = 0.16
+  ctx.strokeStyle = '#8e755c'
+  ctx.lineWidth = 1
+  for (let y = 76; y < h; y += 24) {
+    ctx.beginPath()
+    ctx.moveTo(0, y)
+    ctx.lineTo(w, y)
+    ctx.stroke()
+  }
+  ctx.globalAlpha = 1
 
   drawBoard(ctx, battle, layout, 0)
   if (mode === 'hotseat' && layout.board1) drawBoard(ctx, battle, layout, 1)
@@ -368,24 +450,53 @@ function draw() {
         : e.kind === 'frag'
           ? e.char
           : e.def.name
-    ctx.fillStyle = e.kind === 'frag' ? '#c9a227' : e.kind === 'general' ? '#1d3557' : '#2b2b2b'
+    const radius = Math.min(cw, ch) * 0.34
+    ctx.save()
+    ctx.shadowColor = 'rgba(50, 35, 20, 0.23)'
+    ctx.shadowBlur = 7
+    ctx.shadowOffsetY = 3
+    ctx.fillStyle =
+      e.kind === 'frag'
+        ? '#c9a227'
+        : e.kind === 'general'
+          ? '#183a5a'
+          : UNIT_COLORS[e.unitKind]
     ctx.beginPath()
-    ctx.arc(x, y, Math.min(cw, ch) * 0.36, 0, Math.PI * 2)
+    ctx.arc(x, y, radius, 0, Math.PI * 2)
     ctx.fill()
+    ctx.shadowColor = 'transparent'
+    ctx.strokeStyle = e.kind === 'frag' ? '#f5dd8a' : 'rgba(255,255,255,0.72)'
+    ctx.lineWidth = 1.5
+    ctx.stroke()
     ctx.fillStyle = '#fff'
-    ctx.font = `bold ${Math.floor(Math.min(cw, ch) * 0.32)}px "Songti SC", "SimSun", serif`
+    ctx.font = `bold ${Math.floor(Math.min(cw, ch) * (e.kind === 'general' ? 0.23 : 0.3))}px "Songti SC", "SimSun", serif`
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
     ctx.fillText(label, x, y)
+    if (e.kind === 'unit') {
+      ctx.fillStyle = 'rgba(255,255,255,0.94)'
+      ctx.beginPath()
+      ctx.arc(x + radius * 0.66, y - radius * 0.65, Math.max(7, radius * 0.32), 0, Math.PI * 2)
+      ctx.fill()
+      ctx.fillStyle = UNIT_COLORS[e.unitKind]
+      ctx.font = `bold ${Math.max(8, Math.floor(radius * 0.46))}px sans-serif`
+      ctx.fillText(String(e.level), x + radius * 0.66, y - radius * 0.65)
+    }
+    ctx.restore()
   }
 
   // enemies
   for (const en of battle.enemies) {
-    ctx.fillStyle = en.boss ? '#7b2d26' : '#4a4a4a'
+    ctx.fillStyle = en.boss ? '#7b2d26' : '#4c5963'
     const r = en.boss ? 14 : 10
     ctx.beginPath()
     ctx.arc(en.x, en.y, r, 0, Math.PI * 2)
     ctx.fill()
+    ctx.fillStyle = '#fff8ed'
+    ctx.font = `bold ${en.boss ? 11 : 9}px sans-serif`
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.fillText(en.boss ? '审' : '评', en.x, en.y + 0.5)
     // hp bar
     ctx.fillStyle = '#222'
     ctx.fillRect(en.x - 12, en.y - r - 8, 24, 4)
@@ -402,23 +513,6 @@ function draw() {
     ctx.globalAlpha = 1
   }
 
-  // drag ghost from recruit
-  if (drag?.type === 'recruit') {
-    const slots = drag.side === 0 ? battle.recruit : battle.recruit2
-    const sl = slots[drag.index]
-    if (sl && sl.type !== 'empty') {
-      const label = sl.type === 'unit' ? sl.unitKind! : sl.type === 'frag' ? sl.char! : '工'
-      ctx.fillStyle = 'rgba(0,0,0,0.45)'
-      ctx.beginPath()
-      ctx.arc(pointer.x, pointer.y, 22, 0, Math.PI * 2)
-      ctx.fill()
-      ctx.fillStyle = '#fff'
-      ctx.font = 'bold 18px serif'
-      ctx.textAlign = 'center'
-      ctx.textBaseline = 'middle'
-      ctx.fillText(label, pointer.x, pointer.y)
-    }
-  }
 }
 
 function drawBoard(
@@ -436,22 +530,28 @@ function drawBoard(
       const x = board.x + gx * cw
       const y = board.y + gy * ch
       const open = unlocked.has(`${gx},${gy}`)
-      ctx.fillStyle = open ? 'rgba(255,255,255,0.55)' : 'rgba(120,120,120,0.15)'
-      ctx.strokeStyle = 'rgba(80,70,60,0.25)'
+      ctx.fillStyle = open ? 'rgba(255,253,246,0.78)' : 'rgba(104,87,68,0.13)'
+      ctx.strokeStyle = open ? 'rgba(111,82,53,0.24)' : 'rgba(104,87,68,0.12)'
       ctx.lineWidth = 1
-      ctx.fillRect(x + 2, y + 2, cw - 4, ch - 4)
-      ctx.strokeRect(x + 2, y + 2, cw - 4, ch - 4)
+      ctx.fillRect(x + 3, y + 3, cw - 6, ch - 6)
+      ctx.strokeRect(x + 3, y + 3, cw - 6, ch - 6)
+      if (!open) {
+        ctx.fillStyle = 'rgba(104,87,68,0.23)'
+        ctx.font = '11px serif'
+        ctx.textAlign = 'center'
+        ctx.fillText('待扩建', x + cw / 2, y + ch / 2)
+      }
     }
   }
-  ctx.fillStyle = '#5c4a32'
-  ctx.font = '12px sans-serif'
+  ctx.fillStyle = '#60462e'
+  ctx.font = 'bold 12px sans-serif'
   ctx.textAlign = 'left'
   ctx.fillText(side === 0 ? 'P1 防线' : 'P2 防线', board.x, board.y - 6)
 }
 
 function drawPath(ctx: CanvasRenderingContext2D, path: { x: number; y: number }[]) {
-  ctx.strokeStyle = 'rgba(180,60,50,0.35)'
-  ctx.lineWidth = 8
+  ctx.strokeStyle = 'rgba(166,71,48,0.35)'
+  ctx.lineWidth = 10
   ctx.lineCap = 'round'
   ctx.beginPath()
   path.forEach((p, i) => (i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y)))
@@ -466,8 +566,8 @@ function drawManuscript(
 ) {
   const x = board.x + 24
   const y = board.y + board.h - 28
-  ctx.fillStyle = '#fff8e7'
-  ctx.strokeStyle = '#8b6914'
+  ctx.fillStyle = '#fffdf6'
+  ctx.strokeStyle = '#9a6f21'
   ctx.lineWidth = 2
   ctx.beginPath()
   ctx.rect(x - 18, y - 18, 36, 36)
@@ -477,9 +577,9 @@ function drawManuscript(
   ctx.font = 'bold 16px serif'
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
-  ctx.fillText(label, x, y)
+  ctx.fillText(label, x, y - 2)
   ctx.font = '10px sans-serif'
-  ctx.fillText(`❤${hp}`, x, y + 22)
+  ctx.fillText(`论文 ♥${hp}`, x, y + 22)
 }
 
 function showSettle() {
