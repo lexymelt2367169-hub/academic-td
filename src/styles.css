@@ -1,0 +1,252 @@
+:root {
+  --ink: #2b2420;
+  --paper: #f3efe6;
+  --accent: #9a3412;
+  --line: #c4b8a5;
+  --gold: #c9a227;
+  font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  color: var(--ink);
+  background: #d9d0c1;
+}
+
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+  background: radial-gradient(ellipse at top, #efe8da, #d2c7b4);
+}
+
+#app {
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+}
+
+.shell {
+  width: min(480px, 100vw);
+  min-height: 100vh;
+  padding: 20px 16px 32px;
+}
+
+.hall .hero {
+  margin: 28px 0 20px;
+}
+
+.eyebrow {
+  margin: 0;
+  letter-spacing: 0.2em;
+  font-size: 12px;
+  color: #7a6a58;
+}
+
+h1 {
+  margin: 8px 0;
+  font-family: "Songti SC", "SimSun", serif;
+  font-size: 40px;
+  font-weight: 700;
+}
+
+.sub {
+  margin: 0;
+  color: #5c4a32;
+}
+
+.status {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  padding: 14px;
+  background: rgba(255, 255, 255, 0.55);
+  border: 1px solid var(--line);
+  margin-bottom: 18px;
+}
+
+.status span {
+  display: block;
+  font-size: 12px;
+  color: #7a6a58;
+}
+
+.status strong {
+  font-size: 15px;
+}
+
+.actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.btn {
+  appearance: none;
+  border: 1px solid var(--line);
+  background: #fffdf8;
+  color: var(--ink);
+  padding: 14px 16px;
+  font-size: 16px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.btn.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff8f0;
+}
+
+.hint {
+  margin-top: 18px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #6b5b4b;
+}
+
+.battle-shell {
+  padding: 0;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: #e4ddd0;
+}
+
+#game {
+  display: block;
+  touch-action: none;
+  max-width: 100vw;
+}
+
+.hud {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(460px, 94vw);
+  pointer-events: none;
+  z-index: 2;
+}
+
+.hud-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 13px;
+  background: rgba(255, 252, 245, 0.88);
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+}
+
+.hud-msg {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--accent);
+  text-align: center;
+  background: rgba(255, 252, 245, 0.75);
+  padding: 4px;
+}
+
+.dock {
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(480px, 100vw);
+  background: rgba(35, 28, 22, 0.92);
+  color: #f5efe6;
+  padding: 10px 10px 14px;
+  z-index: 3;
+}
+
+.dock-top {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.chip {
+  appearance: none;
+  border: 1px solid #5a4c3e;
+  background: #3a3028;
+  color: #f5efe6;
+  padding: 6px 10px;
+  font-size: 12px;
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.chip.on {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.slots {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 6px;
+}
+
+.slot {
+  appearance: none;
+  height: 48px;
+  border: 1px solid #6a5a48;
+  background: #4a3f34;
+  color: #fff;
+  font-family: "Songti SC", "SimSun", serif;
+  font-size: 20px;
+  border-radius: 4px;
+  cursor: grab;
+}
+
+.slot.gold {
+  background: linear-gradient(160deg, #8a7020, #c9a227);
+  border-color: #e6d089;
+}
+
+.slot.shovel {
+  background: #2f5d50;
+}
+
+.skills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.skill {
+  appearance: none;
+  border: 1px solid #7a90a8;
+  background: #1d3557;
+  color: #fff;
+  padding: 6px 10px;
+  font-size: 12px;
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.skill.off {
+  opacity: 0.55;
+}
+
+.search-panel {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.settle {
+  text-align: center;
+  padding-top: 80px;
+}
+
+.settle .btn {
+  width: 100%;
+  margin-top: 10px;
+}
